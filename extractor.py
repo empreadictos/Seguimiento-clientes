@@ -8,7 +8,7 @@ import os
 import re
 from datetime import datetime
 
-print("🤖 Iniciando extracción de seguidores...")
+print("🤖 Iniciando extracción de seguidores con lupa mejorada...")
 
 scopes = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -40,7 +40,7 @@ disfraz = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
 for perfil in perfiles:
-    print(f"\n🔍 Buscando seguidores de {perfil['cliente']} en {perfil['red']}...")
+    print(f"\n🔍 Buscando a {perfil['cliente']} en {perfil['red']}...")
     url_busqueda = f"https://www.google.com/search?q=site:{perfil['url']}"
     
     try:
@@ -48,18 +48,29 @@ for perfil in perfiles:
         lentes = BeautifulSoup(respuesta.text, 'html.parser')
         texto = lentes.get_text().lower()
         
-        # Truco para extraer números cerca de la palabra seguidores/followers
         estado = "No se detectó número"
-        match = re.search(r'([\d.,kmb]+)\s*(?:seguidores|followers|me gusta)', texto)
+        
+        # Lupa mejorada: Busca números seguidos de k, m, mil, y luego followers/seguidores/me gusta
+        match = re.search(r'([\d.,]+)\s*(k|m|mil|millones)?\s*(?:seguidores|followers|me gusta|likes)', texto)
         
         if match:
-            estado = f"{match.group(1).upper()} Seguidores"
+            numero = match.group(1)
+            letra = match.group(2) if match.group(2) else ""
+            estado = f"{numero}{letra} Seguidores".upper()
+            print(f"✅ ¡Encontrado!: {estado}")
+        else:
+            # Si no lo encuentra, imprimimos un pedacito de lo que leyó Google para investigar por qué
+            print("⚠️ No encontré el número. Esto es lo que leí de Google:")
+            # Imprime solo los primeros 200 caracteres de texto útil
+            texto_limpio = re.sub(r'\s+', ' ', texto)
+            print(f"   Fragmento: {texto_limpio[:200]}...")
         
         fila_nueva = [fecha_hoy, perfil['cliente'], perfil['red'], perfil['url'], estado]
         hoja.append_row(fila_nueva)
-        print(f"✅ Guardado: {estado}")
             
     except Exception as e:
         print(f"❌ Error: {e}")
         
     time.sleep(3)
+
+print("\n🏁 Proceso terminado.")
