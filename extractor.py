@@ -1,10 +1,33 @@
 import requests
 from bs4 import BeautifulSoup
 import time
+import json
+import gspread
+from google.oauth2.service_account import Credentials
+import os
+from datetime import datetime
 
-print("🤖 Iniciando la extracción múltiple de perfiles de clientes...")
+print("🤖 Iniciando la extracción y conexión con Google Sheets...")
 
-# Aquí está tu lista exacta de perfiles
+# 1. Configuración de Google Sheets
+# Leemos la llave secreta que guardamos en la caja fuerte de GitHub
+scopes = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
+credenciales_json = os.environ.get('GOOGLE_CREDENTIALS')
+credenciales_dict = json.loads(credenciales_json)
+credenciales = Credentials.from_service_account_info(credenciales_dict, scopes=scopes)
+cliente_gspread = gspread.authorize(credenciales)
+
+# 2. Abrir el archivo exacto (usamos el ID de tu enlace)
+# El ID es lo que está entre "/d/" y "/edit" en tu enlace
+ID_DOCUMENTO = "16JMjUvs0F4JYq2fiNupFITNmyqOSERUgQx6ZX1DSqrg"
+hoja = cliente_gspread.open_by_key(ID_DOCUMENTO).sheet1
+
+print("✅ Conectado exitosamente al Cuadro de Métricas.")
+
+# 3. Lista de perfiles a buscar
 perfiles = [
     {"cliente": "Empreadictos", "red": "Instagram", "url": "instagram.com/empreadictos"},
     {"cliente": "Naty Torrente", "red": "Instagram", "url": "instagram.com/natytorrente"},
@@ -19,14 +42,12 @@ perfiles = [
     {"cliente": "Dubán Parra", "red": "LinkedIn", "url": "linkedin.com/in/duban-parra-romero-15a743190"}
 ]
 
-# Nuestro disfraz para Google
 disfraz = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
-# El robot va a revisar cada perfil uno por uno
+# 4. Iniciar la extracción y escritura
 for perfil in perfiles:
     print(f"\n🔍 Analizando {perfil['red']} de {perfil['cliente']}...")
-    
-    # Truco: Le pedimos a Google que busque específicamente dentro de esa URL
     url_busqueda = f"https://www.google.com/search?q=site:{perfil['url']}"
     
     try:
@@ -34,17 +55,18 @@ for perfil in perfiles:
         lentes = BeautifulSoup(respuesta.text, 'html.parser')
         texto = lentes.get_text().lower()
         
-        # Buscamos palabras clave de métricas
+        estado = "Revisado (Falta ajustar extracción de número)"
         if "seguidores" in texto or "followers" in texto or "contactos" in texto or "me gusta" in texto:
-            print(f"✅ ¡Éxito! Datos detectados en Google para {perfil['cliente']}.")
-        else:
-            print(f"⚠️ Google aún no muestra los números exactos en la vista previa para este enlace.")
+             estado = "Datos detectados"
+        
+        # Escribir la fila en Google Sheets
+        fila_nueva = [fecha_hoy, perfil['cliente'], perfil['red'], perfil['url'], estado]
+        hoja.append_row(fila_nueva)
+        print(f"✅ Fila agregada al Sheet: {fila_nueva}")
             
     except Exception as e:
-        print(f"❌ Error al buscar: {e}")
+        print(f"❌ Error: {e}")
         
-    # Le decimos al robot que espere 3 segundos antes de buscar el siguiente
-    # (Si busca los 11 seguidos muy rápido, Google lo bloquea por parecer un virus)
     time.sleep(3) 
 
-print("\n🏁 Misión terminada. Todos los perfiles revisados.")
+print("\n🏁 ¡Misión terminada y datos guardados en tu Drive!")
