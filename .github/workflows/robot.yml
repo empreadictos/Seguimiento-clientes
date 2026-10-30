@@ -21,7 +21,8 @@ jobs:
       - name: Instalar herramientas
         run: pip install -r requirements.txt
           
-      - name: ¡Despertar al Robot!
+     - name: ¡Despertar al Robot!
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          META_TOKEN: ${{ secrets.META_TOKEN }}
         run: python extractor.py
