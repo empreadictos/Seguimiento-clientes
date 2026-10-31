@@ -17,7 +17,6 @@ LIMITE_POSTS = 15
 
 def procesar_clientes():
     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-    
     print("Conectando con Google Sheets para memoria histórica...")
     try:
         credenciales_dict = json.loads(GOOGLE_CREDS_JSON)
@@ -39,12 +38,10 @@ def procesar_clientes():
             print(f"❌ No se encontró la pestaña '{nombre_pestana}'. Saltando.")
             continue
 
-        # 1. LEER EL PASADO (Memoria del Excel)
         registros = hoja.get_all_values()
         historial_links = {}
         
         if len(registros) == 0:
-            # Añadimos la columna Visualizaciones
             hoja.append_row(["Fecha de Consulta", "Red Social", "Seguidores Totales", "Fecha del Post", "Tipo / Mensaje", "Likes Totales", "Comentarios Totales", "Visualizaciones (Views)", "Interacción Hoy (Incremento)", "Link del Post"])
         else:
             for fila in registros[1:]:
@@ -58,18 +55,13 @@ def procesar_clientes():
                         pass
 
         filas_a_guardar = []
-
-        # 2. EXTRAER SEGUIDORES TOTALES
-        seguidores_ig = 0
-        seguidores_fb = 0
+        seguidores_ig, seguidores_fb = 0, 0
         try:
             res_ig_basic = requests.get(f"https://graph.facebook.com/v18.0/{ig_id}?fields=followers_count&access_token={META_TOKEN}").json()
             seguidores_ig = res_ig_basic.get('followers_count', 0)
-            
             res_fb_basic = requests.get(f"https://graph.facebook.com/v18.0/{fb_id}?fields=followers_count&access_token={META_TOKEN}").json()
             seguidores_fb = res_fb_basic.get('followers_count', 0)
-        except Exception as e:
-            print(f"⚠️ Error obteniendo seguidores: {str(e)}")
+        except: pass
 
         # 3. ANALIZAR INSTAGRAM
         url_ig = f"https://graph.facebook.com/v18.0/{ig_id}/media?fields=id,media_type,like_count,comments_count,permalink,timestamp&limit={LIMITE_POSTS}&access_token={META_TOKEN}"
@@ -84,25 +76,28 @@ def procesar_clientes():
                     fecha_post = post.get('timestamp', '')[:10]
                     tipo = post.get('media_type', 'N/A')
                     
-                    # EXTRAER VISUALIZACIONES IG
+                    # MOTOR AVANZADO DE VISUALIZACIONES IG
                     views = 0
-                    try:
-                        metrica = 'plays' if tipo == 'VIDEO' else 'impressions'
-                        url_views = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric={metrica}&access_token={META_TOKEN}"
-                        res_views = requests.get(url_views).json()
-                        if 'data' in res_views and len(res_views['data']) > 0:
-                            views = res_views['data'][0]['values'][0]['value']
-                    except:
-                        views = "N/D"
+                    metrica_primaria = 'plays' if tipo == 'VIDEO' else 'impressions'
+                    url_views = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric={metrica_primaria}&access_token={META_TOKEN}"
+                    res_views = requests.get(url_views).json()
+                    
+                    if 'data' in res_views and len(res_views['data']) > 0:
+                        views = res_views['data'][0]['values'][0]['value']
+                    elif 'error' in res_views:
+                        print(f"⚠️ Aviso IG ({tipo}): {res_views['error'].get('message')}")
+                        # Plan B: Si 'plays' falla para un video, intentamos con 'impressions'
+                        if tipo == 'VIDEO':
+                            url_views_b = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric=impressions&access_token={META_TOKEN}"
+                            res_views_b = requests.get(url_views_b).json()
+                            if 'data' in res_views_b and len(res_views_b['data']) > 0:
+                                views = res_views_b['data'][0]['values'][0]['value']
 
                     es_nuevo = (fecha_post == fecha_hoy)
-                    incremento = ""
-                    guardar = False
+                    incremento = "🌟 PUBLICACIÓN NUEVA" if es_nuevo else ""
+                    guardar = es_nuevo
 
-                    if es_nuevo:
-                        incremento = "🌟 PUBLICACIÓN NUEVA"
-                        guardar = True
-                    else:
+                    if not es_nuevo:
                         if link in historial_links:
                             diff_likes = likes_actuales - historial_links[link]['likes']
                             diff_comentarios = comentarios_actuales - historial_links[link]['comentarios']
@@ -131,24 +126,20 @@ def procesar_clientes():
                     fecha_post = post.get('created_time', '')[:10]
                     mensaje = post.get('message', 'Sin texto')[:30] + "..."
 
-                    # EXTRAER VISUALIZACIONES FB
+                    # MOTOR DE VISUALIZACIONES FB
                     views = 0
-                    try:
-                        url_views_fb = f"https://graph.facebook.com/v18.0/{post_id}/insights/post_impressions?access_token={META_TOKEN}"
-                        res_views_fb = requests.get(url_views_fb).json()
-                        if 'data' in res_views_fb and len(res_views_fb['data']) > 0:
-                            views = res_views_fb['data'][0]['values'][0]['value']
-                    except:
-                        views = "N/D"
+                    url_views_fb = f"https://graph.facebook.com/v18.0/{post_id}/insights/post_impressions?access_token={META_TOKEN}"
+                    res_views_fb = requests.get(url_views_fb).json()
+                    if 'data' in res_views_fb and len(res_views_fb['data']) > 0:
+                        views = res_views_fb['data'][0]['values'][0]['value']
+                    elif 'error' in res_views_fb:
+                        print(f"⚠️ Aviso FB: {res_views_fb['error'].get('message')}")
 
                     es_nuevo = (fecha_post == fecha_hoy)
-                    incremento = ""
-                    guardar = False
+                    incremento = "🌟 PUBLICACIÓN NUEVA" if es_nuevo else ""
+                    guardar = es_nuevo
 
-                    if es_nuevo:
-                        incremento = "🌟 PUBLICACIÓN NUEVA"
-                        guardar = True
-                    else:
+                    if not es_nuevo:
                         if link in historial_links:
                             diff_likes = likes_actuales - historial_links[link]['likes']
                             diff_comentarios = comentarios_actuales - historial_links[link]['comentarios']
