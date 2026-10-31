@@ -44,7 +44,6 @@ def procesar_clientes():
         historial_links = {}
         
         if len(registros) == 0:
-            # ¡Títulos actualizados con los Seguidores Totales!
             hoja.append_row(["Fecha de Consulta", "Red Social", "Seguidores Totales", "Fecha del Post", "Tipo / Mensaje", "Likes Totales", "Comentarios Totales", "Interacción Hoy (Incremento)", "Link del Post"])
         else:
             for fila in registros[1:]:
@@ -95,3 +94,60 @@ def procesar_clientes():
                             diff_likes = likes_actuales - historial_links[link]['likes']
                             diff_comentarios = comentarios_actuales - historial_links[link]['comentarios']
                             if diff_likes > 0 or diff_comentarios > 0:
+                                incremento = f"📈 INCREMENTO: +{diff_likes} Likes, +{diff_comentarios} Comentarios"
+                                guardar = True
+                        else:
+                            incremento = "Registro Base (Para comparar mañana)"
+                            guardar = True
+
+                    if guardar:
+                        filas_a_guardar.append([fecha_hoy, "Instagram", seguidores_ig, fecha_post, tipo, likes_actuales, comentarios_actuales, incremento, link])
+        except Exception as e:
+            print(f"❌ Error leyendo Instagram de {cliente}: {str(e)}")
+
+        # 4. ANALIZAR FACEBOOK
+        url_fb = f"https://graph.facebook.com/v18.0/{fb_id}/posts?fields=message,permalink_url,likes.summary(true),comments.summary(true),created_time&limit={LIMITE_POSTS}&access_token={META_TOKEN}"
+        try:
+            res_fb = requests.get(url_fb).json()
+            if 'data' in res_fb:
+                for post in res_fb['data']:
+                    link = post.get('permalink_url', 'N/A')
+                    likes_actuales = post.get('likes', {}).get('summary', {}).get('total_count', 0)
+                    comentarios_actuales = post.get('comments', {}).get('summary', {}).get('total_count', 0)
+                    fecha_post = post.get('created_time', '')[:10]
+                    mensaje = post.get('message', 'Sin texto')[:30] + "..."
+
+                    es_nuevo = (fecha_post == fecha_hoy)
+                    incremento = ""
+                    guardar = False
+
+                    if es_nuevo:
+                        incremento = "🌟 PUBLICACIÓN NUEVA"
+                        guardar = True
+                    else:
+                        if link in historial_links:
+                            diff_likes = likes_actuales - historial_links[link]['likes']
+                            diff_comentarios = comentarios_actuales - historial_links[link]['comentarios']
+                            if diff_likes > 0 or diff_comentarios > 0:
+                                incremento = f"📈 INCREMENTO: +{diff_likes} Likes, +{diff_comentarios} Comentarios"
+                                guardar = True
+                        else:
+                            incremento = "Registro Base (Para comparar mañana)"
+                            guardar = True
+
+                    if guardar:
+                        filas_a_guardar.append([fecha_hoy, "Facebook", seguidores_fb, fecha_post, mensaje, likes_actuales, comentarios_actuales, incremento, link])
+        except Exception as e:
+            print(f"❌ Error leyendo Facebook de {cliente}: {str(e)}")
+
+        # 5. GUARDAR EN EXCEL
+        if filas_a_guardar:
+            for fila in filas_a_guardar:
+                hoja.append_row(fila)
+            print(f"✅ Se guardaron {len(filas_a_guardar)} movimientos hoy en '{nombre_pestana}'")
+        else:
+            print(f"😴 No hubo interacciones nuevas hoy para {cliente}")
+
+if __name__ == "__main__":
+    procesar_clientes()
+    print("Flujo 100% completado.")
