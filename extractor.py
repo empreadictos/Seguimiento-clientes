@@ -44,11 +44,12 @@ def procesar_clientes():
         historial_links = {}
         
         if len(registros) == 0:
-            hoja.append_row(["Fecha de Consulta", "Red Social", "Seguidores Totales", "Fecha del Post", "Tipo / Mensaje", "Likes Totales", "Comentarios Totales", "Interacción Hoy (Incremento)", "Link del Post"])
+            # Añadimos la columna Visualizaciones
+            hoja.append_row(["Fecha de Consulta", "Red Social", "Seguidores Totales", "Fecha del Post", "Tipo / Mensaje", "Likes Totales", "Comentarios Totales", "Visualizaciones (Views)", "Interacción Hoy (Incremento)", "Link del Post"])
         else:
             for fila in registros[1:]:
-                if len(fila) >= 9:
-                    link = fila[8]
+                if len(fila) >= 10:
+                    link = fila[9]
                     try:
                         likes_viejos = int(fila[5])
                         comentarios_viejos = int(fila[6])
@@ -71,16 +72,28 @@ def procesar_clientes():
             print(f"⚠️ Error obteniendo seguidores: {str(e)}")
 
         # 3. ANALIZAR INSTAGRAM
-        url_ig = f"https://graph.facebook.com/v18.0/{ig_id}/media?fields=media_type,like_count,comments_count,permalink,timestamp&limit={LIMITE_POSTS}&access_token={META_TOKEN}"
+        url_ig = f"https://graph.facebook.com/v18.0/{ig_id}/media?fields=id,media_type,like_count,comments_count,permalink,timestamp&limit={LIMITE_POSTS}&access_token={META_TOKEN}"
         try:
             res_ig = requests.get(url_ig).json()
             if 'data' in res_ig:
                 for post in res_ig['data']:
+                    post_id = post.get('id')
                     link = post.get('permalink', 'N/A')
                     likes_actuales = post.get('like_count', 0)
                     comentarios_actuales = post.get('comments_count', 0)
                     fecha_post = post.get('timestamp', '')[:10]
                     tipo = post.get('media_type', 'N/A')
+                    
+                    # EXTRAER VISUALIZACIONES IG
+                    views = 0
+                    try:
+                        metrica = 'plays' if tipo == 'VIDEO' else 'impressions'
+                        url_views = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric={metrica}&access_token={META_TOKEN}"
+                        res_views = requests.get(url_views).json()
+                        if 'data' in res_views and len(res_views['data']) > 0:
+                            views = res_views['data'][0]['values'][0]['value']
+                    except:
+                        views = "N/D"
 
                     es_nuevo = (fecha_post == fecha_hoy)
                     incremento = ""
@@ -101,22 +114,33 @@ def procesar_clientes():
                             guardar = True
 
                     if guardar:
-                        filas_a_guardar.append([fecha_hoy, "Instagram", seguidores_ig, fecha_post, tipo, likes_actuales, comentarios_actuales, incremento, link])
+                        filas_a_guardar.append([fecha_hoy, "Instagram", seguidores_ig, fecha_post, tipo, likes_actuales, comentarios_actuales, views, incremento, link])
         except Exception as e:
             print(f"❌ Error leyendo Instagram de {cliente}: {str(e)}")
 
         # 4. ANALIZAR FACEBOOK
-        url_fb = f"https://graph.facebook.com/v18.0/{fb_id}/posts?fields=message,permalink_url,likes.summary(true),comments.summary(true),created_time&limit={LIMITE_POSTS}&access_token={META_TOKEN}"
+        url_fb = f"https://graph.facebook.com/v18.0/{fb_id}/posts?fields=id,message,permalink_url,likes.summary(true),comments.summary(true),created_time&limit={LIMITE_POSTS}&access_token={META_TOKEN}"
         try:
             res_fb = requests.get(url_fb).json()
             if 'data' in res_fb:
                 for post in res_fb['data']:
+                    post_id = post.get('id')
                     link = post.get('permalink_url', 'N/A')
                     likes_actuales = post.get('likes', {}).get('summary', {}).get('total_count', 0)
                     comentarios_actuales = post.get('comments', {}).get('summary', {}).get('total_count', 0)
                     fecha_post = post.get('created_time', '')[:10]
                     mensaje = post.get('message', 'Sin texto')[:30] + "..."
 
+                    # EXTRAER VISUALIZACIONES FB
+                    views = 0
+                    try:
+                        url_views_fb = f"https://graph.facebook.com/v18.0/{post_id}/insights/post_impressions?access_token={META_TOKEN}"
+                        res_views_fb = requests.get(url_views_fb).json()
+                        if 'data' in res_views_fb and len(res_views_fb['data']) > 0:
+                            views = res_views_fb['data'][0]['values'][0]['value']
+                    except:
+                        views = "N/D"
+
                     es_nuevo = (fecha_post == fecha_hoy)
                     incremento = ""
                     guardar = False
@@ -136,7 +160,7 @@ def procesar_clientes():
                             guardar = True
 
                     if guardar:
-                        filas_a_guardar.append([fecha_hoy, "Facebook", seguidores_fb, fecha_post, mensaje, likes_actuales, comentarios_actuales, incremento, link])
+                        filas_a_guardar.append([fecha_hoy, "Facebook", seguidores_fb, fecha_post, mensaje, likes_actuales, comentarios_actuales, views, incremento, link])
         except Exception as e:
             print(f"❌ Error leyendo Facebook de {cliente}: {str(e)}")
 
