@@ -35,7 +35,6 @@ def procesar_clientes():
         try:
             hoja = doc.worksheet(nombre_pestana)
         except gspread.exceptions.WorksheetNotFound:
-            print(f"❌ No se encontró la pestaña '{nombre_pestana}'. Saltando.")
             continue
 
         registros = hoja.get_all_values()
@@ -48,11 +47,8 @@ def procesar_clientes():
                 if len(fila) >= 10:
                     link = fila[9]
                     try:
-                        likes_viejos = int(fila[5])
-                        comentarios_viejos = int(fila[6])
-                        historial_links[link] = {'likes': likes_viejos, 'comentarios': comentarios_viejos}
-                    except ValueError:
-                        pass
+                        historial_links[link] = {'likes': int(fila[5]), 'comentarios': int(fila[6])}
+                    except ValueError: pass
 
         filas_a_guardar = []
         seguidores_ig, seguidores_fb = 0, 0
@@ -76,22 +72,22 @@ def procesar_clientes():
                     fecha_post = post.get('timestamp', '')[:10]
                     tipo = post.get('media_type', 'N/A')
                     
-                    # MOTOR AVANZADO DE VISUALIZACIONES IG
+                    # NUEVA LÓGICA DE VISUALIZACIONES IG (v22.0)
                     views = 0
-                    metrica_primaria = 'plays' if tipo == 'VIDEO' else 'impressions'
-                    url_views = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric={metrica_primaria}&access_token={META_TOKEN}"
-                    res_views = requests.get(url_views).json()
-                    
-                    if 'data' in res_views and len(res_views['data']) > 0:
-                        views = res_views['data'][0]['values'][0]['value']
-                    elif 'error' in res_views:
-                        print(f"⚠️ Aviso IG ({tipo}): {res_views['error'].get('message')}")
-                        # Plan B: Si 'plays' falla para un video, intentamos con 'impressions'
+                    try:
+                        # Según el error de Meta, para los videos ahora se exige 'views'
                         if tipo == 'VIDEO':
-                            url_views_b = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric=impressions&access_token={META_TOKEN}"
-                            res_views_b = requests.get(url_views_b).json()
-                            if 'data' in res_views_b and len(res_views_b['data']) > 0:
-                                views = res_views_b['data'][0]['values'][0]['value']
+                            url_views = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric=views&access_token={META_TOKEN}"
+                        # Y para los Carruseles/Imágenes, se exige 'reach' o 'total_interactions' en lugar de 'impressions'
+                        else:
+                            url_views = f"https://graph.facebook.com/v18.0/{post_id}/insights?metric=reach&access_token={META_TOKEN}"
+                            
+                        res_views = requests.get(url_views).json()
+                        
+                        if 'data' in res_views and len(res_views['data']) > 0:
+                            views = res_views['data'][0]['values'][0]['value']
+                    except Exception as e:
+                        print(f"⚠️ Error extrayendo métrica de {tipo}: {str(e)}")
 
                     es_nuevo = (fecha_post == fecha_hoy)
                     incremento = "🌟 PUBLICACIÓN NUEVA" if es_nuevo else ""
@@ -111,7 +107,7 @@ def procesar_clientes():
                     if guardar:
                         filas_a_guardar.append([fecha_hoy, "Instagram", seguidores_ig, fecha_post, tipo, likes_actuales, comentarios_actuales, views, incremento, link])
         except Exception as e:
-            print(f"❌ Error leyendo Instagram de {cliente}: {str(e)}")
+            print(f"❌ Error leyendo Instagram: {str(e)}")
 
         # 4. ANALIZAR FACEBOOK
         url_fb = f"https://graph.facebook.com/v18.0/{fb_id}/posts?fields=id,message,permalink_url,likes.summary(true),comments.summary(true),created_time&limit={LIMITE_POSTS}&access_token={META_TOKEN}"
@@ -128,12 +124,12 @@ def procesar_clientes():
 
                     # MOTOR DE VISUALIZACIONES FB
                     views = 0
-                    url_views_fb = f"https://graph.facebook.com/v18.0/{post_id}/insights/post_impressions?access_token={META_TOKEN}"
-                    res_views_fb = requests.get(url_views_fb).json()
-                    if 'data' in res_views_fb and len(res_views_fb['data']) > 0:
-                        views = res_views_fb['data'][0]['values'][0]['value']
-                    elif 'error' in res_views_fb:
-                        print(f"⚠️ Aviso FB: {res_views_fb['error'].get('message')}")
+                    try:
+                        url_views_fb = f"https://graph.facebook.com/v18.0/{post_id}/insights/post_impressions?access_token={META_TOKEN}"
+                        res_views_fb = requests.get(url_views_fb).json()
+                        if 'data' in res_views_fb and len(res_views_fb['data']) > 0:
+                            views = res_views_fb['data'][0]['values'][0]['value']
+                    except: pass
 
                     es_nuevo = (fecha_post == fecha_hoy)
                     incremento = "🌟 PUBLICACIÓN NUEVA" if es_nuevo else ""
@@ -153,7 +149,7 @@ def procesar_clientes():
                     if guardar:
                         filas_a_guardar.append([fecha_hoy, "Facebook", seguidores_fb, fecha_post, mensaje, likes_actuales, comentarios_actuales, views, incremento, link])
         except Exception as e:
-            print(f"❌ Error leyendo Facebook de {cliente}: {str(e)}")
+            print(f"❌ Error leyendo Facebook: {str(e)}")
 
         # 5. GUARDAR EN EXCEL
         if filas_a_guardar:
